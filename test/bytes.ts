@@ -28,3 +28,16 @@ test('create another keychain and decrypt', async t => {
     t.equal(u.toString(new Uint8Array(decData)), 'hello world',
         'Can create a new keychain and decrypt the data')
 })
+
+test('encryptBytes + decryptBytes with a custom key size', async t => {
+    const keychain = new Keychain()
+    const data = 'hello world, with a 32-byte key'
+
+    const encData = await keychain.encryptBytes(u.fromString(data), {
+        size: 32
+    })
+    const decData = await keychain.decryptBytes(encData, { size: 32 })
+
+    t.equal(u.toString(new Uint8Array(decData)), data,
+        'should decrypt when the same size is passed to both')
+})

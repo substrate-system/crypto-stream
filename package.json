@@ -4,6 +4,7 @@
   "type": "module",
   "version": "0.1.0",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "files": [
     "./dist/*"
   ],
@@ -12,9 +13,10 @@
     "test": "esbuild --format=esm --platform=node --sourcemap --bundle test/index.ts | node --input-type=module | tap-spec",
     "test:electron": "esbuild --bundle test/index.ts | tape-run | tap-spec",
     "test-tape-run": "cat test/index.html | tape-run --input=html --static=test | tap-spec",
-    "build": "mkdir -p ./dist && rm -rf ./dist/* && npm run build:esm && npm run build:cjs",
+    "build": "mkdir -p ./dist && rm -rf ./dist/* && npm run build:esm && npm run build:cjs && npm run build:types",
     "build:esm": "esbuild src/*.ts --format=esm --tsconfig=tsconfig.build.json --keep-names --outdir=./dist",
-    "build:cjs": "esbuild src/*.ts --format=cjs --tsconfig=tsconfig.build.json --keep-names --outdir=./dist --out-extension:.js=.cjs",
+    "build:cjs": "esbuild src/*.ts --format=cjs --tsconfig=tsconfig.build.json --keep-names --outdir=./dist --out-extension:.js=.cjs && node scripts/fix-cjs-specifiers.js",
+    "build:types": "tsc --emitDeclarationOnly --project tsconfig.build.json",
     "start": "vite",
     "toc": "markdown-toc --maxdepth 3 -i README.md",
     "build-docs": "typedoc ./src/index.ts",
@@ -31,6 +33,7 @@
     "@preact/preset-vite": "^2.10.5",
     "@preact/signals": "^2.9.1",
     "@substrate-system/debug": "^0.9.64",
+    "@substrate-system/tapout": "^0.0.40",
     "@substrate-system/tapzero": "^0.10.16",
     "@typescript-eslint/eslint-plugin": "^8.61.0",
     "@typescript-eslint/parser": "^8.61.0",
@@ -50,10 +53,12 @@
   },
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
     "./*": {
+      "types": "./dist/*.d.ts",
       "import": [
         "./dist/*.js",
         "./dist/*"
