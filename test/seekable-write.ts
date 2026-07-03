@@ -9,7 +9,8 @@ import {
     encryptStream,
     decryptStream as eceDecryptStream,
     deriveContentSalt,
-    encryptRecord
+    encryptRecord,
+    plaintextSize
 } from '../src/ece.js'
 import * as root from '../src/index.js'
 
@@ -132,6 +133,16 @@ test('recordCount: k*(rs-17) records with custom rs', t => {
     const n = k * (rs - 17)
     const result = recordCount(n, rs)
     t.equal(result, k)
+})
+
+test('plaintextSize: throws for encryptedSize smaller than HEADER_LENGTH', t => {
+    t.throws(() => plaintextSize(HEADER_LENGTH - 1))
+    t.throws(() => plaintextSize(0))
+})
+
+test('plaintextSize: does not throw for encryptedSize === HEADER_LENGTH', t => {
+    const result = plaintextSize(HEADER_LENGTH)
+    t.equal(result, 0)
 })
 
 // Header equality test (AC3.1)
@@ -728,12 +739,76 @@ test(
             offset += chunk.byteLength
         }
 
-        const mainKey = await keychain['mainKeyPromise']
         const decrypted = await streamToArray(
-            decryptStreamECE(arrayToStream(cipher), mainKey, rs)
+            await keychain.decryptStream(arrayToStream(cipher), {
+                recordSize: rs
+            })
         )
 
         t.deepEqual(decrypted, data)
+    }
+)
+
+test(
+    'Keychain round-trip: custom rs via decryptStreamRange',
+    async t => {
+        const keychain = new root.Keychain()
+        const rs = 128
+        const data = new Uint8Array(300)
+        webcrypto.getRandomValues(data)
+        const digest = await keychain.contentDigest(data)
+
+        const hdr = await keychain.header({
+            contentDigest: digest,
+            recordSize: rs
+        })
+        const max = recordPlaintextSize(rs)
+        const n = recordCount(data.length, rs)
+
+        const chunks:Array<Uint8Array> = [hdr]
+        for (let i = 0; i < n; i++) {
+            const start = i * max
+            const end = Math.min(start + max, data.length)
+            const slice = data.subarray(start, end)
+            const encrypted = await keychain.encryptRecord(
+                i,
+                slice,
+                {
+                    isLast: i === n - 1,
+                    contentDigest: digest,
+                    recordSize: rs
+                }
+            )
+            chunks.push(encrypted)
+        }
+
+        const totalSize = chunks.reduce(
+            (sum, chunk) => sum + chunk.byteLength,
+            0
+        )
+        const cipher = new Uint8Array(totalSize)
+        let offset = 0
+        for (const chunk of chunks) {
+            cipher.set(chunk, offset)
+            offset += chunk.byteLength
+        }
+
+        const rangeOffset = 50
+        const rangeLength = 100
+        const { ranges, decrypt } = await keychain.decryptStreamRange(
+            rangeOffset,
+            rangeLength,
+            cipher.byteLength,
+            { recordSize: rs }
+        )
+
+        const streams = ranges.map(({ offset, length }) =>
+            arrayToStream(cipher.slice(offset, offset + length))
+        )
+
+        const decrypted = await streamToArray(decrypt(streams))
+
+        t.deepEqual(decrypted, data.slice(rangeOffset, rangeOffset + rangeLength))
     }
 )
 

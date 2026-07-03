@@ -25,24 +25,26 @@ This uses the [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/
 - [Seek](#seek)
 - [API](#api)
   * [`new Keychain([key, [salt]])`](#new-keychainkey-salt)
+  * [`Keychain.AuthHeader(secretKey, salt)`](#keychainauthheadersecretkey-salt)
+  * [`Keychain.Header(writeToken)`](#keychainheaderwritetoken)
   * [`keychain.key`](#keychainkey)
   * [`keychain.keyB64`](#keychainkeyb64)
   * [`keychain.salt`](#keychainsalt)
   * [`keychain.saltB64`](#keychainsaltb64)
   * [`keychain.authToken()`](#keychainauthtoken)
   * [`keychain.authTokenB64()`](#keychainauthtokenb64)
-  * [`keychain.authHeader()`](#keychainauthheader)
+  * [`keychain.authHeader([tokenString])`](#keychainauthheadertokenstring)
   * [`keychain.setAuthToken(authToken)`](#keychainsetauthtokenauthtoken)
   * [`keychain.encryptStream(stream[, opts])`](#keychainencryptstreamstream-opts)
   * [`keychain.contentDigest(content)`](#keychaincontentdigestcontent)
   * [`keychain.header(opts)`](#keychainheaderopts)
   * [`keychain.encryptRecord(seq, plaintext, opts)`](#keychainencryptrecordseq-plaintext-opts)
-  * [`keychain.decryptStream(encryptedStream)`](#keychaindecryptstreamencryptedstream)
-  * [`keychain.decryptStreamRange(offset, length, totalEncryptedLength)`](#keychaindecryptstreamrangeoffset-length-totalencryptedlength)
+  * [`keychain.decryptStream(encryptedStream[, opts])`](#keychaindecryptstreamencryptedstream-opts)
+  * [`keychain.decryptStreamRange(offset, length, totalEncryptedLength[, opts])`](#keychaindecryptstreamrangeoffset-length-totalencryptedlength-opts)
   * [`keychain.encryptMeta(meta)`](#keychainencryptmetameta)
   * [`keychain.decryptMeta(ivEncryptedMeta)`](#keychaindecryptmetaivencryptedmeta)
-  * [`keychain.encryptBytes(bytes)`](#keychainencryptbytesbytes)
-  * [`keychain.decryptBytes(bytes)`](#keychaindecryptbytesbytes)
+  * [`keychain.encryptBytes(bytes[, opts])`](#keychainencryptbytesbytes-opts)
+  * [`keychain.decryptBytes(bytes[, opts])`](#keychaindecryptbytesbytes-opts)
   * [`plaintextSize(encryptedSize)`](#plaintextsizeencryptedsize)
   * [`encryptedSize(plaintextSize)`](#encryptedsizeplaintextsize)
 - [Reproducible & record-addressable encryption](#reproducible--record-addressable-encryption)
@@ -98,10 +100,13 @@ local `vite` server.
 ```js
 import { Keychain } from '@substrate-system/crypto-stream'
 
-const encryptedData = await fetch(imgUrl)
-const decryptedStream = await keychain.decryptStream(encryptedData.body)
-const response = new Response(decryptedStream)
-const blobUrl = window.URL.createObjectURL(await response.blob())
+// Decryption requires the same key and salt that encrypted the file.
+const keychain = new Keychain(key, salt)
+
+const response = await fetch(imgUrl)
+const decryptedStream = await keychain.decryptStream(response.body)
+const decryptedResponse = new Response(decryptedStream)
+const blobUrl = window.URL.createObjectURL(await decryptedResponse.blob())
 
 // ...
 
@@ -115,7 +120,7 @@ function Component () {
 `crypto-stream` can seek on both sides of the cipher.
 
 Reads use
-[`decryptStreamRange`](#keychaindecryptstreamrangeoffset-length-totalencryptedlength),
+[`decryptStreamRange`](#keychaindecryptstreamrangeoffset-length-totalencryptedlength-opts),
 which decrypts an arbitrary byte range without reading the whole
 ciphertext.
 
@@ -130,7 +135,7 @@ import { Keychain } from '@substrate-system/crypto-stream'
 import {
     recordPlaintextSize,
     recordCount
-} from '@substrate-system/crypto-stream/src/ece'
+} from '@substrate-system/crypto-stream/ece'
 
 const keychain = new Keychain()
 const data = new TextEncoder().encode('the quick brown fox')
@@ -203,6 +208,48 @@ The salt. This should be 16 bytes in length. If a `string` is given,
 then it should be a base64-encoded string. If this argument is `null`, then a
 salt will be automatically generated.
 
+### `Keychain.AuthHeader(secretKey, salt)`
+
+```ts
+static async AuthHeader (
+    secretKey:string,
+    salt:string|Uint8Array
+):Promise<string>
+```
+
+Static equivalent of [`keychain.authHeader()`](#keychainauthheadertokenstring),
+for callers that have a base64-encoded key and salt but no `Keychain`
+instance. Derives the auth token from `secretKey` and `salt` and returns
+the same `Bearer sync-v1 ${authTokenB64}` header value.
+
+#### `secretKey`
+
+Type: `string`
+
+The main key, as a base64-encoded string.
+
+#### `salt`
+
+Type: `string | Uint8Array`
+
+The salt used to derive the authentication token.
+
+### `Keychain.Header(writeToken)`
+
+```ts
+static Header (writeToken:string):string
+```
+
+Format a token as the HTTP header value: `Bearer sync-v1 ${writeToken}`.
+Used internally by `Keychain.AuthHeader` and `keychain.authHeader`, and
+useful on its own for formatting a server-issued writer token.
+
+#### `writeToken`
+
+Type: `string`
+
+A base64-encoded token.
+
 ### `keychain.key`
 
 ```ts
@@ -239,7 +286,7 @@ The salt as a base64-encoded string.
 
 ### `keychain.authToken()`
 ```ts
-authToken ():Promise<ArrayBuffer>
+authToken ():Promise<Uint8Array>
 ```
 
 Returns the authentication token. By default, the authentication token is
@@ -265,14 +312,22 @@ authTokenB64 ():Promise<string>
 
 Returns the authentication token as a base64-encoded string.
 
-### `keychain.authHeader()`
+### `keychain.authHeader([tokenString])`
 
 ```ts
-authHeader ():Promise<string>
-// => `Bearer sync-v1 ${authTokenB64}`
+authHeader (tokenString?:string):Promise<string>
+// => `Bearer sync-v1 ${tokenString ?? authTokenB64}`
 ```
 
 Returns a `Promise` that resolves to the HTTP header value to be provided to the server, as a base64 string. It contains the authentication token.
+
+#### `tokenString`
+
+Type: `string`
+
+Optional. A base64-encoded token to use instead of the keychain's own
+`authTokenB64`. Useful for presenting a server-issued "writer token"
+instead of the reader token derived from the main key.
 
 ### `keychain.setAuthToken(authToken)`
 
@@ -460,7 +515,14 @@ Type: `number`
 ECE record size in bytes (default `RECORD_SIZE` = 65536). Must match
 the record size used for the header and other records.
 
-### `keychain.decryptStream(encryptedStream)`
+### `keychain.decryptStream(encryptedStream[, opts])`
+
+```ts
+decryptStream (
+    encryptedStream:ReadableStream<Uint8Array>,
+    opts?:{ recordSize?:number }
+):Promise<ReadableStream<Uint8Array>>
+```
 
 Type: `Function`
 
@@ -469,19 +531,31 @@ Returns: `Promise<ReadableStream>`
 Returns a `Promise` that resolves to a `ReadableStream` decryption stream that
 consumes the data in `encryptedStream` and returns a plaintext version.
 
-### `keychain.decryptStreamRange(offset, length, totalEncryptedLength)`
+#### `encryptedStream`
+
+Type: `ReadableStream`
+
+A WHATWG readable stream used as a data source for the plaintext stream.
+
+#### `opts`
+
+Type: `{ recordSize? }`
+
+Pass the same `recordSize` that was used to encrypt the stream; defaults to
+`RECORD_SIZE` (65536).
+
+### `keychain.decryptStreamRange(offset, length, totalEncryptedLength[, opts])`
 
 ```ts
-function decryptStreamRange (
-    secretKey:CryptoKey,
+decryptStreamRange (
     offset:number,
     length:number,
     totalEncryptedLength:number,
-    rs:number = RECORD_SIZE
-):{
+    opts?:{ recordSize?:number }
+):Promise<{
     ranges:{ offset:number, length:number }[],
     decrypt:(streams:ReadableStream[])=>ReadableStream
-}
+}>
 ```
 
 Returns a `Promise` that resolves to a object containing `ranges`, which is
@@ -495,11 +569,30 @@ the client should call `decrypt(streams)`, where `streams` is an array of
 will then return a `ReadableStream` containing the plaintext data for the
 client's desired byte range.
 
-#### `encryptedStream`
+#### `offset`
 
-Type: `ReadableStream`
+Type: `number`
 
-A WHATWG readable stream used as a data source for the plaintext stream.
+Byte offset into the plaintext to start reading from.
+
+#### `length`
+
+Type: `number`
+
+Number of plaintext bytes to read.
+
+#### `totalEncryptedLength`
+
+Type: `number`
+
+Total length, in bytes, of the encrypted stream.
+
+#### `opts`
+
+Type: `{ recordSize? }`
+
+Pass the same `recordSize` that was used to encrypt the stream; defaults to
+`RECORD_SIZE` (65536).
 
 ### `keychain.encryptMeta(meta)`
 
@@ -538,26 +631,48 @@ Type: `Uint8Array`
 
 The encrypted metadata buffer to decrypt.
 
-### `keychain.encryptBytes(bytes)`
+### `keychain.encryptBytes(bytes[, opts])`
 
 ```ts
 async function encryptBytes (
     bytes:ArrayBuffer|Uint8Array,
-    opts?:{ iv?:Uint8Array },
+    opts?:{ iv?:Uint8Array, size?:number },
 ):Promise<Uint8Array>
 ```
 
-Encrypt and return the given data in-memory, not using streams.
+Encrypt and return the given data in-memory, not using streams. The key is
+derived deterministically from the main key, so `decryptBytes` can re-derive
+it and decrypt the result.
 
-### `keychain.decryptBytes(bytes)`
+#### `opts`
+
+Type: `{ iv?, size? }`
+
+Optional. `size` is the derived key length in bytes (default 16); pass the
+same `size` to `decryptBytes` to re-derive a matching key. `iv` is a 12-byte
+initialization vector, randomly generated if omitted.
+
+SAFETY: reusing a caller-supplied `iv` across two calls with different
+plaintexts is AES-GCM nonce reuse under the same derived key, and breaks
+confidentiality. Omit `iv` to get a random one per call.
+
+### `keychain.decryptBytes(bytes[, opts])`
 
 ```ts
 async function decryptBytes (
     bytes:Uint8Array,
+    opts?:{ size?:number },
 ):Promise<ArrayBuffer>
 ```
 
 Decrypt the given data in-memory, without streaming.
+
+#### `opts`
+
+Type: `{ size? }`
+
+Optional. Pass the same `size` that was given to `encryptBytes`, so the
+same-length key is re-derived.
 
 ### `plaintextSize(encryptedSize)`
 
@@ -632,7 +747,7 @@ behavior and is a single pass.
 ### Low-level ECE building blocks
 
 The package exports low-level ECE functions at
-`@substrate-system/crypto-stream/src/ece`. These include `RECORD_SIZE`,
+`@substrate-system/crypto-stream/ece`. These include `RECORD_SIZE`,
 `HEADER_LENGTH`, `recordPlaintextSize`, `recordCount`, `header`,
 `deriveContentSalt`, and `encryptRecord`. They take a raw salt directly
 and are footgun-prone: passing the same raw salt with two different

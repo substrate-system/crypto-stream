@@ -83,7 +83,9 @@ class TransformStreamSource<T> {
     // async start (controller:ReadableStreamController<T>) {
     async start (controller:ReadableByteStreamController):Promise<void> {
         this.wrappedController = {
-            desiredSize: controller.desiredSize,
+            get desiredSize () {
+                return controller.desiredSize
+            },
 
             enqueue: (value) => {
                 this.progressMade = true

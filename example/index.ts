@@ -27,18 +27,9 @@ effect(() => {
         // Normally you'd now use `encryptedStream`, e.g. in fetch(), etc.
         // However, for this example, we'll just decrypt the stream immediately
         const decryptedStream = await keychain.decryptStream(encryptedImg)
-        const decryptedReader = decryptedStream.getReader()
-        const { value } = await decryptedReader.read()
-        decryptedSignal.value = new Blob([new Uint8Array(value!)])
+        decryptedSignal.value = await new Response(decryptedStream).blob()
     })()
 })
-
-/**
- * If a chunk is available to read, the promise will be fulfilled with an
- * object of the form { value: theChunk, done: false }.
- *
- * https://developer.mozilla.org/en-US/docs/Web/API/Streams_API/Using_readable_streams#reading_the_stream
- */
 
 const blobUrl = computed<string|null>(() => {
     if (!decryptedSignal.value) return null

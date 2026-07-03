@@ -342,6 +342,11 @@ export function plaintextSize (
     if (!Number.isInteger(rs)) {
         throw new TypeError('rs')
     }
+    if (encryptedSize < HEADER_LENGTH) {
+        throw new RangeError(
+            `encryptedSize must be at least ${HEADER_LENGTH} (HEADER_LENGTH)`
+        )
+    }
 
     const chunkMetaLength = TAG_LENGTH + 1   // Chunk metadata, tag and delimiter
     const encryptedRecordsSize = encryptedSize - HEADER_LENGTH

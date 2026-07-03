@@ -290,13 +290,19 @@ export class Keychain {
     /**
      * Encrypt and return some data; don't stream.
      *
-     * NOTE: This generates a new key each time it is called, via
-     * `this.generateKey`.
+     * NOTE: The key is derived deterministically from the main key via
+     * `this.generateKey`, not freshly generated — that is why
+     * `decryptBytes` is able to re-derive the same key and decrypt.
      *
-     * @param bytes 
+     * SAFETY: if a caller-supplied `iv` is reused across two calls with
+     * different plaintexts (same derived key), that is AES-GCM nonce
+     * reuse and breaks confidentiality. Omit `iv` to get a random one
+     * per call.
+     *
+     * @param bytes
      * @param {{ iv?:Uint8Array, size?:number }} [opts] Optional params,
      * `iv` and `size`. If `size` is omitted, default is 16 bytes. `iv` is
-     * a random 12 bits, will be generated if not passed in.
+     * a random 12 bytes, will be generated if not passed in.
      * @returns {Promise<Uint8Array>}
      */
     async encryptBytes (
@@ -318,11 +324,17 @@ export class Keychain {
 
     /**
      * Decrypt in memory, not streaming.
+     *
+     * @param bytes
+     * @param {{ size?:number }} [opts] Pass the same `size` that was
+     * given to `encryptBytes`, so the same-length key is re-derived.
+     * @returns {Promise<ArrayBuffer>}
      */
     async decryptBytes (
         bytes:Uint8Array,
+        opts?:{ size?:number },
     ):Promise<ArrayBuffer> {
-        const key = await this.generateKey()
+        const key = await this.generateKey(opts?.size)
         // `iv` is prepended to the encrypted text
         const iv = bytes.slice(0, 12)
         const cipherBytes = bytes.slice(12)
@@ -364,16 +376,23 @@ export class Keychain {
     /**
      * Take an encrypted stream, return a decrypted stream.
      * @param encryptedStream The input (encrypted) stream
+     * @param opts `{ recordSize? }`. Pass the same `recordSize` that was
+     * used to encrypt the stream; defaults to `RECORD_SIZE` (65536).
      * @returns The decrypted stream
      */
     async decryptStream (
-        encryptedStream:ReadableStream<Uint8Array>
+        encryptedStream:ReadableStream<Uint8Array>,
+        opts?:{ recordSize?:number }
     ):Promise<ReadableStream<Uint8Array>> {
         if (!(encryptedStream instanceof ReadableStream)) {
             throw new TypeError('encryptedStream is not a ReadableStream')
         }
         const mainKey = await this.mainKeyPromise
-        return decryptStream(encryptedStream, mainKey)
+        return decryptStream(
+            encryptedStream,
+            mainKey,
+            opts?.recordSize ?? RECORD_SIZE
+        )
     }
 
     /**
@@ -385,12 +404,16 @@ export class Keychain {
      * @param {number} offset Integer
      * @param {number} length Integer
      * @param {number} totalEncryptedLength Integer
+     * @param {{ recordSize?:number }} [opts] Pass the same `recordSize`
+     * that was used to encrypt the stream; defaults to `RECORD_SIZE`
+     * (65536).
      * @returns {Promise<{ ranges, decrypt }>}
      */
     async decryptStreamRange (
         offset:number,
         length:number,
-        totalEncryptedLength:number
+        totalEncryptedLength:number,
+        opts?:{ recordSize?:number }
     ):Promise<{
         ranges:{ offset:number, length:number }[],
         decrypt:(streams:ReadableStream[])=>ReadableStream
@@ -406,7 +429,13 @@ export class Keychain {
         }
 
         const mainKey = await this.mainKeyPromise
-        return decryptStreamRange(mainKey, offset, length, totalEncryptedLength)
+        return decryptStreamRange(
+            mainKey,
+            offset,
+            length,
+            totalEncryptedLength,
+            opts?.recordSize ?? RECORD_SIZE
+        )
     }
 
     async encryptMeta (meta:Uint8Array):Promise<Uint8Array> {
