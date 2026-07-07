@@ -1,8 +1,8 @@
 import { test } from '@substrate-system/tapzero'
+import { KEY_LENGTH } from '../src/constants.js'
 import {
     RECORD_SIZE,
     HEADER_LENGTH,
-    KEY_LENGTH,
     recordPlaintextSize,
     recordCount,
     header,

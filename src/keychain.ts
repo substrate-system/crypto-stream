@@ -6,17 +6,26 @@ import {
     encryptStream,
     header as eceHeader,
     encryptRecord as eceEncryptRecord,
-    KEY_LENGTH,
     RECORD_SIZE,
 } from './ece.js'
-import { randomBuf, joinBufs, asBufferSource } from './util.js'
+import {
+    KEY_LENGTH,
+    IV_LENGTH
+} from './constants.js'
+import {
+    randomBuf,
+    joinBufs,
+    asBufferSource,
+    normalizeKeychainOptions,
+    decodeMainKey,
+    type Salt,
+    decodeBits,
+} from './util.js'
 
 const webcrypto = globalThis.crypto
+const encoder = new TextEncoder()
 
 export { encryptedSize, plaintextSize } from './ece.js'
-
-const IV_LENGTH = 12
-const encoder = new TextEncoder()
 
 export class Keychain {
     key:Uint8Array<ArrayBuffer>
@@ -25,9 +34,17 @@ export class Keychain {
     metaKeyPromise:Promise<CryptoKey>
     authTokenPromise:Promise<Uint8Array>
 
-    constructor (key?:string|Uint8Array, salt?:string|Uint8Array) {
-        this.key = decodeBits(key)
-        this.salt = decodeBits(salt)
+    constructor (
+        key?:string|Uint8Array|null,
+        options?:{
+            salt?:Salt|null;
+            encoding?:u.SupportedEncodings;
+        }|Salt|null
+    ) {
+        const opts = normalizeKeychainOptions(options)
+
+        this.key = decodeMainKey(key, opts.encoding)
+        this.salt = decodeBits(opts.salt, 'salt')
 
         this.mainKeyPromise = webcrypto.subtle.importKey(
             'raw',
@@ -76,7 +93,7 @@ export class Keychain {
      * Get an authentication header as a static method.
      */
     static async AuthHeader (secretKey:string, salt:string|Uint8Array) {
-        const key = decodeBits(secretKey)
+        const key = decodeMainKey(secretKey)
         const mainKey = await webcrypto.subtle.importKey(
             'raw',
             key,
@@ -89,14 +106,14 @@ export class Keychain {
             {
                 name: 'HKDF',
                 hash: 'SHA-256',
-                salt: decodeBits(salt),
+                salt: decodeBits(salt, 'salt'),
                 info: encoder.encode('authentication')
             },
             mainKey,
             128
         )
 
-        return Keychain.Header(arrayToB64(new Uint8Array(token)))
+        return Keychain.Header(u.toString(new Uint8Array(token), 'base64url'))
     }
 
     static Header (writeToken:string) {
@@ -107,14 +124,14 @@ export class Keychain {
      * Get the main key as a `base64url` encoded string
      */
     get keyB64 ():string {
-        return arrayToB64Url(this.key)
+        return u.toString(this.key, 'base64url')
     }
 
     /**
-     * Get the salt as base64 string
+     * Get the salt as a `base64url` string.
      */
     get saltB64 ():string {
-        return arrayToB64(this.salt)
+        return u.toString(this.salt, 'base64url')
     }
 
     /**
@@ -126,11 +143,11 @@ export class Keychain {
     }
 
     /**
-     * Get the auth token as a base64 string
+     * Get the auth token as a `base64url` string.
      */
     async authTokenB64 ():Promise<string> {
         const authToken = await this.authToken()
-        return arrayToB64(authToken)
+        return u.toString(authToken, 'base64url')
     }
 
     /**
@@ -151,7 +168,10 @@ export class Keychain {
      * @param authToken The new token
      */
     setAuthToken (authToken?:string|Uint8Array):void {
-        this.authTokenPromise = Promise.resolve(decodeBits(authToken))
+        this.authTokenPromise = Promise.resolve(decodeBits(
+            authToken,
+            'auth token'
+        ))
     }
 
     /**
@@ -460,7 +480,9 @@ export class Keychain {
 
         const encryptedMeta = new Uint8Array(encryptedMetaBuf)
 
-        const ivEncryptedMeta = new Uint8Array(IV_LENGTH + encryptedMeta.byteLength)
+        const ivEncryptedMeta = new Uint8Array(
+            IV_LENGTH + encryptedMeta.byteLength
+        )
         ivEncryptedMeta.set(iv, 0)
         ivEncryptedMeta.set(encryptedMeta, IV_LENGTH)
 
@@ -488,43 +510,4 @@ export class Keychain {
         const meta = new Uint8Array(metaBuf)
         return meta
     }
-}
-
-function arrayToB64 (array:Uint8Array):string {
-    return u.toString(array, 'base64pad')
-}
-
-/**
- * Return the given Uint8Array as a base64url string.
- * @param array Uint8Array
- * @returns `base64url` encoded string
- */
-function arrayToB64Url (array:Uint8Array):string {
-    return u.toString(array, 'base64url')
-}
-
-function b64ToArray (str:string):Uint8Array<ArrayBuffer> {
-    // Accept both base64 and base64url input by normalizing url-safe chars.
-    return u.fromString(str.replace(/-/g, '+').replace(/_/g, '/'), 'base64')
-}
-
-function decodeBits (
-    bitsB64?:Uint8Array|string|null
-):Uint8Array<ArrayBuffer> {
-    let result
-    if (bitsB64 instanceof Uint8Array) {
-        result = asBufferSource(bitsB64)
-    } else if (typeof bitsB64 === 'string') {
-        result = b64ToArray(bitsB64)
-    } else if (bitsB64 == null) {
-        result = webcrypto.getRandomValues(new Uint8Array(16))
-    } else {
-        throw new Error('Must be Uint8Array, string, or nullish')
-    }
-
-    if (result.byteLength !== 16) {
-        throw new Error('Invalid byteLength: must be 16 bytes')
-    }
-
-    return result
 }

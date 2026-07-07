@@ -7,6 +7,7 @@ import './bytes.js'
 import './seekable-write.js'
 
 const webcrypto = globalThis.crypto
+const base64UrlPattern = /^[A-Za-z0-9_-]+$/
 
 let keychain:InstanceType<typeof Keychain>
 let salt:Uint8Array
@@ -22,9 +23,11 @@ test('keychain properties', async t => {
 
     t.equal(typeof keychain.keyB64, 'string')
     t.equal(keychain.keyB64.length, 22)
+    t.ok(base64UrlPattern.test(keychain.keyB64))
 
     t.equal(typeof keychain.saltB64, 'string')
-    t.equal(keychain.saltB64.length, 24)
+    t.equal(keychain.saltB64.length, 22)
+    t.ok(base64UrlPattern.test(keychain.saltB64))
 
     const authToken = await keychain.authToken()
     t.ok(authToken instanceof Uint8Array)
@@ -32,7 +35,8 @@ test('keychain properties', async t => {
 
     const authTokenB64 = await keychain.authTokenB64()
     t.equal(typeof authTokenB64, 'string')
-    t.equal(authTokenB64.length, 24)
+    t.equal(authTokenB64.length, 22)
+    t.ok(base64UrlPattern.test(authTokenB64))
 
     const authHeader = await keychain.authHeader()
     t.equal(typeof authHeader, 'string')
@@ -65,17 +69,64 @@ test('keychain from given key and salt (Uint8Array)', async t => {
     t.deepEqual(keychain.salt, salt)
 })
 
-test('keychain from given key and salt (base64)', async t => {
-    const key = webcrypto.getRandomValues(new Uint8Array(16))
-    const salt = webcrypto.getRandomValues(new Uint8Array(16))
+test('keychain from given key and salt (base64url)', async t => {
+    const key = new Uint8Array(16).fill(255)
+    const salt = new Uint8Array(16).fill(255)
 
     const keychain = new Keychain(
-        u.toString(key, 'base64pad'),
-        u.toString(salt, 'base64pad')
+        u.toString(key, 'base64url'),
+        {
+            salt: u.toString(salt, 'base64url'),
+            encoding: 'base64url'
+        }
     )
 
     t.deepEqual(keychain.key, key)
     t.deepEqual(keychain.salt, salt)
+})
+
+test('keychain decodes string key as base64url by default', async t => {
+    const key = webcrypto.getRandomValues(new Uint8Array(16))
+    const salt = webcrypto.getRandomValues(new Uint8Array(16))
+
+    const keychain = new Keychain(u.toString(key, 'base64url'), { salt })
+
+    t.deepEqual(keychain.key, key)
+    t.deepEqual(keychain.salt, salt)
+})
+
+test('keychain decodes string key with explicit encoding', async t => {
+    const key = webcrypto.getRandomValues(new Uint8Array(16))
+    const salt = webcrypto.getRandomValues(new Uint8Array(16))
+    const keyString = u.toString(key, 'hex')
+
+    const keychain = new Keychain(
+        keyString,
+        { salt, encoding: 'hex' }
+    )
+
+    t.deepEqual(keychain.key, key)
+    t.deepEqual(keychain.salt, salt)
+})
+
+test('keychain accepts 32-byte main keys', async t => {
+    const key = new Uint8Array(32).fill(255)
+    const salt = new Uint8Array(16).fill(255)
+    const keyString = u.toString(key, 'base64url')
+
+    const keychain = new Keychain(key, salt)
+    const stringKeychain = new Keychain(keyString, {
+        salt: u.toString(salt, 'base64url')
+    })
+    const authHeader = await Keychain.AuthHeader(
+        keyString,
+        u.toString(salt, 'base64url')
+    )
+
+    t.deepEqual(keychain.key, key)
+    t.deepEqual(keychain.salt, salt)
+    t.deepEqual(stringKeychain.key, key)
+    t.equal(authHeader, await stringKeychain.authHeader())
 })
 
 test('keychain throws on invalid key or salt', async t => {
@@ -111,13 +162,17 @@ test('keychain.setAuthTokenB64', async t => {
     keychain.setAuthToken(authToken)
 
     t.deepEqual(await keychain.authToken(), authToken)
-    t.equal(await keychain.authTokenB64(), u.toString(authToken, 'base64pad'))
+    t.equal(await keychain.authTokenB64(), u.toString(authToken, 'base64url'))
 })
 
 test('.AuthHeader static method', async t => {
-    const newKeys = new Keychain()
-    const stringMainKey = newKeys.keyB64
-    const authHeader = await Keychain.AuthHeader(stringMainKey, newKeys.saltB64)
+    const key = new Uint8Array(16).fill(255)
+    const salt = new Uint8Array(16).fill(255)
+    const newKeys = new Keychain(key, salt)
+    const authHeader = await Keychain.AuthHeader(
+        u.toString(key, 'base64url'),
+        u.toString(salt, 'base64url')
+    )
 
     t.equal(typeof authHeader, 'string', 'should return a string')
     t.ok(authHeader.includes('Bearer'), 'should be the right format')

@@ -41,6 +41,24 @@ test('encrypt then decrypt stream', async t => {
     t.deepEqual(plaintext, data)
 })
 
+test('encrypt then decrypt stream with 32-byte key', async t => {
+    const key = crypto.getRandomValues(new Uint8Array(32))
+    const salt = crypto.getRandomValues(new Uint8Array(16))
+    const encryptKeychain = new Keychain(key, salt)
+    const decryptKeychain = new Keychain(key, salt)
+    const data = crypto.getRandomValues(new Uint8Array(65536))
+
+    const encryptedStream = await encryptKeychain.encryptStream(
+        arrayToStream(data)
+    )
+    const plaintextStream = await decryptKeychain.decryptStream(
+        encryptedStream
+    )
+    const plaintext = await streamToArray(plaintextStream)
+
+    t.deepEqual(plaintext, data)
+})
+
 let keychain:InstanceType<typeof Keychain>
 let data:Uint8Array
 let encryptedData:Uint8Array

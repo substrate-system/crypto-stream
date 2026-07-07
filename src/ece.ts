@@ -8,13 +8,12 @@ import { transformStream } from './transform-stream.js'
 import { SliceTransformer } from './slice-transformer.js'
 import { ExtractTransformer } from './extract-transformer.js'
 import { generateSalt, asBufferSource, joinBufs } from './util.js'
+import { TAG_LENGTH, KEY_LENGTH } from './constants.js'
 
 const webcrypto = globalThis.crypto
 
 const MODE_ENCRYPT = 'encrypt'
 const MODE_DECRYPT = 'decrypt'
-export const KEY_LENGTH = 16
-export const TAG_LENGTH = 16
 const NONCE_LENGTH = 12
 export const RECORD_SIZE = 64 * 1024
 export const HEADER_LENGTH = KEY_LENGTH + 4 + 1 // salt + record size + idlen

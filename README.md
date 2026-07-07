@@ -24,7 +24,7 @@ This uses the [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/
   * [Example With Blobs](#example-with-blobs)
 - [Seek](#seek)
 - [API](#api)
-  * [`new Keychain([key, [salt]])`](#new-keychainkey-salt)
+  * [`new Keychain([key, [options]])`](#new-keychainkey-options)
   * [`Keychain.AuthHeader(secretKey, salt)`](#keychainauthheadersecretkey-salt)
   * [`Keychain.Header(writeToken)`](#keychainheaderwritetoken)
   * [`keychain.key`](#keychainkey)
@@ -177,9 +177,18 @@ low-level building blocks.
 
 ## API
 
-### `new Keychain([key, [salt]])`
+### `new Keychain([key, [options]])`
+
 ```ts
-constructor (key?:string|Uint8Array, salt?:string|Uint8Array)
+type KeychainOptions = {
+    salt?:string|Uint8Array|null
+    encoding?:uint8arrays.SupportedEncodings
+}
+
+constructor (
+    key?:string|Uint8Array|null,
+    options?:KeychainOptions|string|Uint8Array|null
+)
 ```
 
 Type: `Class`
@@ -195,20 +204,39 @@ Type: `Uint8Array | string | null`
 
 Default: `null`
 
-The main key. This should be 16 bytes in length. If a `string` is given,
-then it should be a base64-encoded string. If the argument is `null`, then a
-key will be automatically generated.
+The main key. This should be 16 or 32 bytes in length. If a `string` is
+given, then it should be a base64url-encoded string by default. To use another
+`uint8arrays` string encoding, pass `options.encoding`. If the argument is
+`null`, then a key will be automatically generated.
 
-#### `salt`
+#### `options`
+
+Type: `KeychainOptions | string | Uint8Array | null`
+
+Default: `null`
+
+Constructor options. For backwards compatibility, the second argument may still
+be a salt string or `Uint8Array` directly.
+
+#### `options.salt`
 
 Type: `Uint8Array | string | null`
 
 Default: `null`
 
 The Keychain salt. This should be 16 bytes in length. If a `string` is
-given, then it should be a base64-encoded string. If this argument is
-`null`, then a salt will be automatically generated. This value is used
-for auth and metadata derivation, not as the ECE stream header salt.
+given, then it should be a base64url-encoded string. If this
+argument is `null`, then a salt will be automatically generated. This value
+is used for auth and metadata derivation, not as the ECE stream header salt.
+
+#### `options.encoding`
+
+Type: `uint8arrays.SupportedEncodings`
+
+Default: `'base64url'`
+
+The string encoding to use when `key` is a string. This option is ignored when
+`key` is a `Uint8Array` or nullish.
 
 ### `Keychain.AuthHeader(secretKey, salt)`
 
@@ -220,21 +248,22 @@ static async AuthHeader (
 ```
 
 Static equivalent of [`keychain.authHeader()`](#keychainauthheadertokenstring),
-for callers that have a base64-encoded key and salt but no `Keychain`
-instance. Derives the auth token from `secretKey` and `salt` and returns
-the same `Bearer sync-v1 ${authTokenB64}` header value.
+for callers that have an encoded key and salt but no `Keychain` instance.
+Derives the auth token from `secretKey` and `salt` and returns the same
+`Bearer sync-v1 ${authTokenB64}` header value.
 
 #### `secretKey`
 
 Type: `string`
 
-The main key, as a base64-encoded string.
+The main key, as a base64url-encoded string.
 
 #### `salt`
 
 Type: `string | Uint8Array`
 
-The salt used to derive the authentication token.
+The salt used to derive the authentication token. String salts may be
+base64url-encoded.
 
 ### `Keychain.Header(writeToken)`
 
@@ -250,7 +279,7 @@ useful on its own for formatting a server-issued writer token.
 
 Type: `string`
 
-A base64-encoded token.
+A base64url-encoded token.
 
 ### `keychain.key`
 
@@ -285,7 +314,7 @@ written into each encrypted stream's content-coding header.
 ```ts
 saltB64:string
 ```
-The salt as a base64-encoded string.
+The salt as a base64url-encoded string.
 
 ### `keychain.authToken()`
 ```ts
@@ -313,7 +342,7 @@ by the server.
 authTokenB64 ():Promise<string>
 ```
 
-Returns the authentication token as a base64-encoded string.
+Returns the authentication token as a base64url-encoded string.
 
 ### `keychain.authHeader([tokenString])`
 
@@ -322,13 +351,14 @@ authHeader (tokenString?:string):Promise<string>
 // => `Bearer sync-v1 ${tokenString ?? authTokenB64}`
 ```
 
-Returns a `Promise` that resolves to the HTTP header value to be provided to the server, as a base64 string. It contains the authentication token.
+Returns a `Promise` that resolves to the HTTP header value to be provided to
+the server, as a base64url string. It contains the authentication token.
 
 #### `tokenString`
 
 Type: `string`
 
-Optional. A base64-encoded token to use instead of the keychain's own
+Optional. A base64url-encoded token to use instead of the keychain's own
 `authTokenB64`. Useful for presenting a server-issued "writer token"
 instead of the reader token derived from the main key.
 
@@ -347,7 +377,7 @@ Type: `Uint8Array | string | null`
 Default: `null`
 
 The authentication token. This should be 16 bytes in length. If a `string` is
-given, then it should be a base64-encoded string. If this argument is `null`,
+given, then it should be a base64url-encoded string. If this argument is `null`,
 then an authentication token will be automatically generated.
 
 ### `keychain.encryptStream(stream[, opts])`
