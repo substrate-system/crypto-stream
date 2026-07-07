@@ -1,5 +1,11 @@
 # Proposal: deterministic + record-addressable encryption
 
+> Historical design note. This document describes the older raw-salt
+> proposal that led to the current API. The implemented `Keychain` API no
+> longer accepts raw content salts; it derives the ECE stream salt from
+> `contentDigest` and writes that salt into the RFC 8188 content-coding
+> header. Treat `README.md` and `src/keychain.ts` as the current API.
+
 Target repo: `@substrate-system/crypto-stream` (verified against the
 installed `0.0.35` dist).
 

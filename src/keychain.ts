@@ -377,8 +377,9 @@ export class Keychain {
     /**
      * Take an encrypted stream, return a decrypted stream.
      * @param encryptedStream The input (encrypted) stream
-     * @param opts `{ recordSize? }`. Pass the same `recordSize` that was
-     * used to encrypt the stream; defaults to `RECORD_SIZE` (65536).
+     * @param opts `{ recordSize? }`. Optional validation hint. Stream
+     * decryption reads the ECE salt and record size from the encrypted
+     * stream header.
      * @returns The decrypted stream
      */
     async decryptStream (
@@ -392,7 +393,7 @@ export class Keychain {
         return decryptStream(
             encryptedStream,
             mainKey,
-            opts?.recordSize ?? RECORD_SIZE
+            opts?.recordSize
         )
     }
 

@@ -79,13 +79,13 @@ import { Keychain } from '@vanishing.page/crypto-stream'
 const keychain = new Keychain()
 
 // Get a WHATWG stream somehow, from fetch(), from a Blob(), etc.
-const stream = getStream()
+const stream = getStream(/* ... */)
 
 // Create an encrypted version of that stream
 const encryptedStream = await keychain.encryptStream(stream)
 
 // Normally you'd now use `encryptedStream`, e.g. in fetch(), etc.
-// However, for this example, we'll just decrypt the stream immediately
+// For this example, we'll just decrypt the stream immediately
 const plaintextStream = await keychain.decryptStream(encryptedStream)
 
 // Now, you can use `plaintextStream` and it will be identical
@@ -100,8 +100,9 @@ local `vite` server.
 ```js
 import { Keychain } from '@vanishing.page/crypto-stream'
 
-// Decryption requires the same key and salt that encrypted the file.
-const keychain = new Keychain(key, salt)
+// Stream decryption requires the same main key. The encrypted stream
+// header carries the ECE salt and record size.
+const keychain = new Keychain(key)
 
 const response = await fetch(imgUrl)
 const decryptedStream = await keychain.decryptStream(response.body)
@@ -204,9 +205,10 @@ Type: `Uint8Array | string | null`
 
 Default: `null`
 
-The salt. This should be 16 bytes in length. If a `string` is given,
-then it should be a base64-encoded string. If this argument is `null`, then a
-salt will be automatically generated.
+The Keychain salt. This should be 16 bytes in length. If a `string` is
+given, then it should be a base64-encoded string. If this argument is
+`null`, then a salt will be automatically generated. This value is used
+for auth and metadata derivation, not as the ECE stream header salt.
 
 ### `Keychain.AuthHeader(secretKey, salt)`
 
@@ -272,10 +274,11 @@ The main key as a base64url-encoded string.
 salt:Uint8Array
 ```
 
-The salt.
+The Keychain salt.
 
 Implementation note: The salt is used to derive the (internal) metadata key and
-authentication token.
+authentication token. It is separate from the ECE stream salt, which is
+written into each encrypted stream's content-coding header.
 
 ### `keychain.saltB64`
 
@@ -541,8 +544,10 @@ A WHATWG readable stream used as a data source for the plaintext stream.
 
 Type: `{ recordSize? }`
 
-Pass the same `recordSize` that was used to encrypt the stream; defaults to
-`RECORD_SIZE` (65536).
+Optional validation hint. Sequential stream decryption reads the ECE salt
+and record size from the encrypted stream's RFC 8188 content-coding header.
+If `recordSize` is provided, decryption fails when it does not match the
+header.
 
 ### `keychain.decryptStreamRange(offset, length, totalEncryptedLength[, opts])`
 
@@ -592,7 +597,10 @@ Total length, in bytes, of the encrypted stream.
 Type: `{ recordSize? }`
 
 Pass the same `recordSize` that was used to encrypt the stream; defaults to
-`RECORD_SIZE` (65536).
+`RECORD_SIZE` (65536). Range decryption needs this before reading the body
+so it can calculate encrypted byte ranges. Sequential `decryptStream` reads
+the record size from the encrypted stream header. This helper is intended
+for streams produced by this package, which writes empty `keyid` headers.
 
 ### `keychain.encryptMeta(meta)`
 

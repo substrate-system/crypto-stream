@@ -2,6 +2,7 @@ import { test } from '@substrate-system/tapzero'
 import {
     RECORD_SIZE,
     HEADER_LENGTH,
+    KEY_LENGTH,
     recordPlaintextSize,
     recordCount,
     header,
@@ -52,6 +53,11 @@ test('exports: RECORD_SIZE', t => {
 test('exports: HEADER_LENGTH', t => {
     t.equal(typeof HEADER_LENGTH, 'number')
     t.equal(HEADER_LENGTH, 21)
+})
+
+test('header: rejects record size smaller than RFC minimum', t => {
+    const salt = webcrypto.getRandomValues(new Uint8Array(16))
+    t.throws(() => header(salt, 17), /rs must be at least 18/)
 })
 
 test('exports: recordPlaintextSize', t => {
@@ -239,6 +245,22 @@ test('encryptRecord: non-16-byte salt throws Invalid salt length', async t => {
     await t.throws(async () => {
         await encryptRecord(key, 0, slice, false, badSalt, rs)
     }, /Invalid salt length/)
+})
+
+test('encryptRecord: accepts sequence numbers beyond 32 bits', async t => {
+    const key = await makeKey()
+    const salt = webcrypto.getRandomValues(new Uint8Array(16))
+    const plaintext = new Uint8Array([1, 2, 3])
+
+    const encrypted = await encryptRecord(
+        key,
+        0x100000000,
+        plaintext,
+        true,
+        salt
+    )
+
+    t.ok(encrypted instanceof Uint8Array)
 })
 
 // Helper to build per-record ciphertext
@@ -524,6 +546,59 @@ test(
 
         const expectedSize = root.encryptedSize(data.length, rs)
         t.equal(encrypted.length, expectedSize)
+    }
+)
+
+test(
+    'Keychain.decryptStream: reads custom recordSize from header',
+    async t => {
+        const keychain = new root.Keychain()
+        const rs = 256
+        const data = new Uint8Array(1000)
+        webcrypto.getRandomValues(data)
+
+        const encrypted = await streamToArray(
+            await keychain.encryptStream(
+                arrayToStream(data),
+                { recordSize: rs }
+            )
+        )
+
+        const decrypted = await streamToArray(
+            await keychain.decryptStream(arrayToStream(encrypted))
+        )
+
+        t.deepEqual(decrypted, data)
+    }
+)
+
+test(
+    'ece.decryptStream: accepts non-zero keyid header',
+    async t => {
+        const key = await makeKey()
+        const salt = webcrypto.getRandomValues(new Uint8Array(16))
+        const rs = 256
+        const data = new Uint8Array(1000)
+        const keyid = new TextEncoder().encode('kid')
+        webcrypto.getRandomValues(data)
+
+        const encrypted = await streamToArray(
+            encryptStream(arrayToStream(data), key, rs, salt)
+        )
+        const cipher = new Uint8Array(encrypted.byteLength + keyid.byteLength)
+        cipher.set(encrypted.slice(0, HEADER_LENGTH), 0)
+        cipher[KEY_LENGTH + 4] = keyid.byteLength
+        cipher.set(keyid, HEADER_LENGTH)
+        cipher.set(
+            encrypted.slice(HEADER_LENGTH),
+            HEADER_LENGTH + keyid.byteLength
+        )
+
+        const decrypted = await streamToArray(
+            eceDecryptStream(arrayToStream(cipher), key)
+        )
+
+        t.deepEqual(decrypted, data)
     }
 )
 

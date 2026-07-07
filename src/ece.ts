@@ -7,7 +7,7 @@ import { concatStreams } from './concat-streams.js'
 import { transformStream } from './transform-stream.js'
 import { SliceTransformer } from './slice-transformer.js'
 import { ExtractTransformer } from './extract-transformer.js'
-import { generateSalt, asBufferSource } from './util.js'
+import { generateSalt, asBufferSource, joinBufs } from './util.js'
 
 const webcrypto = globalThis.crypto
 
@@ -18,6 +18,7 @@ export const TAG_LENGTH = 16
 const NONCE_LENGTH = 12
 export const RECORD_SIZE = 64 * 1024
 export const HEADER_LENGTH = KEY_LENGTH + 4 + 1 // salt + record size + idlen
+const MIN_RECORD_SIZE = TAG_LENGTH + 2
 
 const encoder = new TextEncoder()
 const SALT_INFO = encoder.encode('Content-Encoding: salt\0')
@@ -25,7 +26,7 @@ const SALT_INFO = encoder.encode('Content-Encoding: salt\0')
 class ECETransformer {
     mode:'encrypt'|'decrypt'
     secretKey:CryptoKey
-    rs:number
+    rs:number|null
     salt:Uint8Array<ArrayBuffer>|null
     seekOpts:Partial<{ startSeq, endSeq, endsPrematurely }>
     seq:number
@@ -36,7 +37,7 @@ class ECETransformer {
     constructor (
         mode:'encrypt'|'decrypt',
         secretKey:CryptoKey,
-        rs:number,
+        rs:number|null,
         salt:Uint8Array<ArrayBuffer>|null,
         seekOpts = {}
     ) {
@@ -48,6 +49,9 @@ class ECETransformer {
 
         if (salt != null && salt.byteLength !== KEY_LENGTH) {
             throw new Error('Invalid salt length')
+        }
+        if (rs != null) {
+            checkRecordSize(rs)
         }
 
         this.mode = mode
@@ -101,20 +105,22 @@ class ECETransformer {
     }
 
     generateNonce (seq:number):Uint8Array<ArrayBuffer> {
-        if (seq > 0xffffffff) {
-            throw new Error('record sequence number exceeds limit')
+        if (!Number.isSafeInteger(seq) || seq < 0) {
+            throw new Error('invalid record sequence number')
         }
         if (!this.nonceBase) throw new Error('Not nonce base')
 
         const nonce = this.nonceBase.slice()
-        const dv = new DataView(nonce.buffer, nonce.byteOffset, nonce.byteLength)
-        const m = dv.getUint32(nonce.byteLength - 4)
-        const xor = (m ^ seq) >>> 0 // forces unsigned int xor
-        dv.setUint32(nonce.byteLength - 4, xor)
+        let n = BigInt(seq)
+        for (let i = nonce.byteLength - 1; i >= 0 && n > 0n; i -= 1) {
+            nonce[i] = nonce[i] ^ Number(n & 0xffn)
+            n >>= 8n
+        }
         return nonce
     }
 
     pad (data:Uint8Array, isLast:boolean):Uint8Array<ArrayBuffer> {
+        if (this.rs == null) throw new Error('Not record size')
         const len = data.byteLength
         if (len + TAG_LENGTH >= this.rs) {
             throw new Error('data too large for record size')
@@ -155,20 +161,32 @@ class ECETransformer {
 
     createHeader ():Uint8Array {
         if (!this.salt) throw new Error('Not salt')
+        if (this.rs == null) throw new Error('Not record size')
         return header(this.salt, this.rs)
     }
 
-    readHeader (buffer:Uint8Array):{ salt:Uint8Array, rs:number } {
-        if (buffer.byteLength !== HEADER_LENGTH) {
+    readHeader (
+        buffer:Uint8Array
+    ):{ salt:Uint8Array, rs:number, keyid:Uint8Array } {
+        if (buffer.byteLength < HEADER_LENGTH) {
             throw new Error('chunk is not expected header length')
         }
-        const header:{ salt, rs } = { salt: null, rs: null }
-        const dv = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength)
-        header.salt = buffer.slice(0, KEY_LENGTH)
-        header.rs = dv.getUint32(KEY_LENGTH)
+        const dv = new DataView(
+            buffer.buffer,
+            buffer.byteOffset,
+            buffer.byteLength
+        )
         const idlen = dv.getUint8(KEY_LENGTH + 4)
-        if (idlen !== 0) {
-            throw new Error('Implementation does not support non-zero idlen')
+        const expectedLength = HEADER_LENGTH + idlen
+        if (buffer.byteLength !== expectedLength) {
+            throw new Error('chunk is not expected header length')
+        }
+        const rs = dv.getUint32(KEY_LENGTH)
+        checkRecordSize(rs)
+        const header = {
+            salt: buffer.slice(0, KEY_LENGTH),
+            rs,
+            keyid: buffer.slice(HEADER_LENGTH)
         }
         return header
     }
@@ -245,7 +263,8 @@ class ECETransformer {
                 this.salt = asBufferSource(header.salt)
                 if (this.rs !== null && this.rs !== header.rs) {
                     throw new Error(
-                        'Record size declared in constructor does not match record size in encrypted stream'
+                        'Record size declared in constructor does not ' +
+                        'match record size in encrypted stream'
                     )
                 }
                 this.rs = header.rs
@@ -302,6 +321,73 @@ class ECETransformer {
     }
 }
 
+class ECEDecryptionSlicer {
+    expectedRs:number|null
+    buffer:Uint8Array<ArrayBuffer>
+    rs:number|null
+
+    constructor (expectedRs?:number) {
+        if (expectedRs != null) {
+            checkRecordSize(expectedRs)
+        }
+        this.expectedRs = expectedRs ?? null
+        this.buffer = new Uint8Array(0)
+        this.rs = null
+    }
+
+    transform (
+        chunk:Uint8Array,
+        controller:TransformStreamDefaultController
+    ):void {
+        this.buffer = joinBufs(this.buffer, chunk)
+        this.drain(controller)
+    }
+
+    flush (controller:TransformStreamDefaultController):void {
+        this.drain(controller)
+        if (this.rs == null) {
+            throw new Error('Missing ECE header')
+        }
+        if (this.buffer.byteLength > 0) {
+            controller.enqueue(this.buffer)
+            this.buffer = new Uint8Array(0)
+        }
+    }
+
+    drain (controller:TransformStreamDefaultController):void {
+        if (this.rs == null) {
+            if (this.buffer.byteLength < HEADER_LENGTH) return
+
+            const dv = new DataView(
+                this.buffer.buffer,
+                this.buffer.byteOffset,
+                this.buffer.byteLength
+            )
+            const idlen = dv.getUint8(KEY_LENGTH + 4)
+            const headerLength = HEADER_LENGTH + idlen
+            if (this.buffer.byteLength < headerLength) return
+
+            const rs = dv.getUint32(KEY_LENGTH)
+            checkRecordSize(rs)
+            if (this.expectedRs != null && this.expectedRs !== rs) {
+                throw new Error(
+                    'Record size declared in constructor does not match ' +
+                    'record size in encrypted stream'
+                )
+            }
+
+            controller.enqueue(this.buffer.slice(0, headerLength))
+            this.buffer = this.buffer.slice(headerLength)
+            this.rs = rs
+        }
+
+        while (this.buffer.byteLength >= this.rs) {
+            controller.enqueue(this.buffer.slice(0, this.rs))
+            this.buffer = this.buffer.slice(this.rs)
+        }
+    }
+}
+
 /**
  * Given a plaintext size, return the corresponding encrypted size.
  *
@@ -315,9 +401,7 @@ export function encryptedSize (
     if (!Number.isInteger(plaintextSize)) {
         throw new TypeError('plaintextSize')
     }
-    if (!Number.isInteger(rs)) {
-        throw new TypeError('rs')
-    }
+    checkRecordSize(rs)
 
     const chunkMetaLength = TAG_LENGTH + 1   // Chunk metadata, tag and delimiter
     return (
@@ -340,9 +424,7 @@ export function plaintextSize (
     if (!Number.isInteger(encryptedSize)) {
         throw new TypeError('encryptedSize')
     }
-    if (!Number.isInteger(rs)) {
-        throw new TypeError('rs')
-    }
+    checkRecordSize(rs)
     if (encryptedSize < HEADER_LENGTH) {
         throw new RangeError(
             `encryptedSize must be at least ${HEADER_LENGTH} (HEADER_LENGTH)`
@@ -367,9 +449,7 @@ export function plaintextSize (
  * @returns Plaintext bytes per record.
  */
 export function recordPlaintextSize (rs:number = RECORD_SIZE):number {
-    if (!Number.isInteger(rs)) {
-        throw new TypeError('rs')
-    }
+    checkRecordSize(rs)
     return rs - TAG_LENGTH - 1
 }
 
@@ -389,9 +469,7 @@ export function recordCount (
     if (!Number.isInteger(plaintextSize)) {
         throw new TypeError('plaintextSize')
     }
-    if (!Number.isInteger(rs)) {
-        throw new TypeError('rs')
-    }
+    checkRecordSize(rs)
     return Math.ceil(plaintextSize / recordPlaintextSize(rs))
 }
 
@@ -419,9 +497,7 @@ export function header (
     if (salt.byteLength !== KEY_LENGTH) {
         throw new Error('Invalid salt length')
     }
-    if (!Number.isInteger(rs)) {
-        throw new TypeError('rs')
-    }
+    checkRecordSize(rs)
     const buf = new Uint8Array(HEADER_LENGTH)
     buf.set(salt)
     const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
@@ -554,16 +630,16 @@ export function encryptStream (
 export function decryptStream (
     input:ReadableStream,
     secretKey:CryptoKey,
-    rs = RECORD_SIZE
+    rs?:number
 ):ReadableStream {
     const stream = transformStream(
         input,
-        new SliceTransformer(HEADER_LENGTH, rs)
+        new ECEDecryptionSlicer(rs)
     ).readable
 
     return transformStream(
         stream,
-        new ECETransformer(MODE_DECRYPT, secretKey, rs, null)
+        new ECETransformer(MODE_DECRYPT, secretKey, rs ?? null, null)
     ).readable
 }
 
@@ -598,9 +674,7 @@ export function decryptStreamRange (
     ranges:{ offset:number, length:number }[],
     decrypt:(streams:ReadableStream[])=>ReadableStream
 } {
-    if (!Number.isInteger(rs)) {
-        throw new TypeError('Missing record size (rs)')
-    }
+    checkRecordSize(rs)
 
     // Chunk metadata, tag and delimiter
     const chunkMetaLength = TAG_LENGTH + 1
@@ -676,5 +750,17 @@ function checkSecretKey (secretKey:CryptoKey):void {
     }
     if (!secretKey.usages.includes('deriveBits')) {
         throw new Error('Invalid key: usages must include deriveBits')
+    }
+}
+
+function checkRecordSize (rs:number):void {
+    if (!Number.isInteger(rs)) {
+        throw new TypeError('rs')
+    }
+    if (rs < MIN_RECORD_SIZE) {
+        throw new RangeError('rs must be at least 18')
+    }
+    if (rs > 0xffffffff) {
+        throw new RangeError('rs must fit uint32')
     }
 }
