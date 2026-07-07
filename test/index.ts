@@ -1,12 +1,12 @@
 import { test } from '@substrate-system/tapzero'
 import * as u from 'uint8arrays'
-import { webcrypto } from '@substrate-system/one-webcrypto'
 import { Keychain } from '../src/index.js'
-
 import './metadata.js'
 import './stream.js'
 import './bytes.js'
 import './seekable-write.js'
+
+const webcrypto = globalThis.crypto
 
 let keychain:InstanceType<typeof Keychain>
 let salt:Uint8Array

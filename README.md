@@ -1,10 +1,10 @@
 # crypto stream
 [![tests](https://img.shields.io/github/actions/workflow/status/mycelial-systems/crypto-stream/nodejs.yml?style=flat-square)](https://github.com/mycelial-systems/crypto-stream/actions/workflows/nodejs.yml)
 [![module](https://img.shields.io/badge/module-ESM%2FCJS-blue?style=flat-square)](README.md)
-[![types](https://img.shields.io/npm/types/@substrate-system/crypto-stream?style=flat-square)](README.md)
+[![types](https://img.shields.io/npm/types/@vanishing.page/crypto-stream?style=flat-square)](README.md)
 [![semantic versioning](https://img.shields.io/badge/semver-2.0.0-blue?logo=semver&style=flat-square)](https://semver.org/)
 [![Common Changelog](https://nichoth.github.io/badge/common-changelog.svg)](./CHANGELOG.md)
-[![install size](https://flat.badgen.net/packagephobia/install/@substrate-system/crypto-stream?cache-control=no-cache)](https://packagephobia.com/result?p=@substrate-system/crypto-stream)
+[![install size](https://flat.badgen.net/packagephobia/install/@vanishing.page/crypto-stream?cache-control=no-cache)](https://packagephobia.com/result?p=@vanishing.page/crypto-stream)
 [![license](https://img.shields.io/badge/license-Big_Time-blue?style=flat-square)](LICENSE)
 
 
@@ -59,7 +59,7 @@ This uses the [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/
 ## Install
 
 ```sh
-npm i -S @substrate-system/crypto-stream
+npm i -S @vanishing.page/crypto-stream
 ```
 
 ## Fork
@@ -72,7 +72,7 @@ world of open source.
 ## Example
 
 ```js
-import { Keychain } from '@substrate-system/crypto-stream'
+import { Keychain } from '@vanishing.page/crypto-stream'
 
 // Create a new keychain. Since no arguments are specified, the key and salt
 // are generated.
@@ -98,7 +98,7 @@ See [./example](./example/index.ts) for a version that uses blobs + a
 local `vite` server.
 
 ```js
-import { Keychain } from '@substrate-system/crypto-stream'
+import { Keychain } from '@vanishing.page/crypto-stream'
 
 // Decryption requires the same key and salt that encrypted the file.
 const keychain = new Keychain(key, salt)
@@ -131,11 +131,11 @@ large file (for example, over WebRTC) without buffering the whole ciphertext.
 Hash the content once, then hand out individual records as they are requested.
 
 ```js
-import { Keychain } from '@substrate-system/crypto-stream'
+import { Keychain } from '@vanishing.page/crypto-stream'
 import {
     recordPlaintextSize,
     recordCount
-} from '@substrate-system/crypto-stream/ece'
+} from '@vanishing.page/crypto-stream/ece'
 
 const keychain = new Keychain()
 const data = new TextEncoder().encode('the quick brown fox')
@@ -747,7 +747,7 @@ behavior and is a single pass.
 ### Low-level ECE building blocks
 
 The package exports low-level ECE functions at
-`@substrate-system/crypto-stream/ece`. These include `RECORD_SIZE`,
+`@vanishing.page/crypto-stream/ece`. These include `RECORD_SIZE`,
 `HEADER_LENGTH`, `recordPlaintextSize`, `recordCount`, `header`,
 `deriveContentSalt`, and `encryptRecord`. They take a raw salt directly
 and are footgun-prone: passing the same raw salt with two different

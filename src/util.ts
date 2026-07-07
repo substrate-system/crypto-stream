@@ -1,10 +1,10 @@
-import { webcrypto } from '@substrate-system/one-webcrypto'
-
 export function generateSalt (len:number):Uint8Array<ArrayBuffer> {
     const salt = new Uint8Array(len)
     webcrypto.getRandomValues(salt)
     return salt
 }
+
+const webcrypto = globalThis.crypto
 
 /**
  * Return a `Uint8Array` of the given length filled with random bytes.

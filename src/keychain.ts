@@ -1,4 +1,3 @@
-import { webcrypto } from '@substrate-system/one-webcrypto'
 import * as u from 'uint8arrays'
 import {
     decryptStream,
@@ -11,6 +10,8 @@ import {
     RECORD_SIZE,
 } from './ece.js'
 import { randomBuf, joinBufs, asBufferSource } from './util.js'
+
+const webcrypto = globalThis.crypto
 
 export { encryptedSize, plaintextSize } from './ece.js'
 

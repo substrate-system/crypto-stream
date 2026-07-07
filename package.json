@@ -1,5 +1,5 @@
 {
-  "name": "@substrate-system/crypto-stream",
+  "name": "@vanishing.page/crypto-stream",
   "description": "Streaming encryption for the browser",
   "type": "module",
   "version": "0.1.1",
@@ -26,7 +26,6 @@
     "prepublishOnly": "npm run build && npm run build:cjs"
   },
   "dependencies": {
-    "@substrate-system/one-webcrypto": "^1.1.6",
     "uint8arrays": "^6.1.1"
   },
   "devDependencies": {
@@ -85,8 +84,8 @@
     "browser"
   ],
   "bugs": {
-    "url": "https://github.com/mycelial-systems/crypto-stream/issues"
+    "url": "https://github.com/vanishing-page/crypto-stream/issues"
   },
-  "homepage": "https://github.com/mycelial-systems/crypto-stream",
+  "homepage": "https://github.com/vanishing-page/crypto-stream",
   "license": "SEE LICENSE IN LICENSE"
 }

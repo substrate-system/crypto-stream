@@ -1,5 +1,4 @@
 import { test } from '@substrate-system/tapzero'
-import { webcrypto } from '@substrate-system/one-webcrypto'
 import {
     RECORD_SIZE,
     HEADER_LENGTH,
@@ -13,6 +12,8 @@ import {
     plaintextSize
 } from '../src/ece.js'
 import * as root from '../src/index.js'
+
+const webcrypto = globalThis.crypto
 
 // Build the HKDF CryptoKey that ece functions expect as `secretKey`.
 async function makeKey (

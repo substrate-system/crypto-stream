@@ -6,9 +6,10 @@
 import { concatStreams } from './concat-streams.js'
 import { transformStream } from './transform-stream.js'
 import { SliceTransformer } from './slice-transformer.js'
-import { webcrypto } from '@substrate-system/one-webcrypto'
 import { ExtractTransformer } from './extract-transformer.js'
 import { generateSalt, asBufferSource } from './util.js'
+
+const webcrypto = globalThis.crypto
 
 const MODE_ENCRYPT = 'encrypt'
 const MODE_DECRYPT = 'decrypt'
