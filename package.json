@@ -2,7 +2,7 @@
   "name": "@vanishing.page/crypto-stream",
   "description": "Streaming encryption for the browser",
   "type": "module",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
