@@ -8,6 +8,24 @@
   "files": [
     "./dist/*"
   ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "import": [
+        "./dist/*.js",
+        "./dist/*"
+      ],
+      "require": [
+        "./dist/*.cjs",
+        "./dist/*"
+      ]
+    }
+  },
   "scripts": {
     "lint": "eslint \"./**/*.{ts,js}\"",
     "test": "esbuild --format=esm --platform=node --sourcemap --bundle test/index.ts | node --input-type=module | tap-spec",
@@ -49,24 +67,6 @@
     "typedoc": "^0.28.19",
     "typescript": "^6.0.3",
     "vite": "^8.0.16"
-  },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    },
-    "./*": {
-      "types": "./dist/*.d.ts",
-      "import": [
-        "./dist/*.js",
-        "./dist/*"
-      ],
-      "require": [
-        "./dist/*.cjs",
-        "./dist/*"
-      ]
-    }
   },
   "author": "nichoth <nichoth@gmail.com> (https://nichoth.com)",
   "directories": {
