@@ -50,7 +50,7 @@
     "@preact/preset-vite": "^2.10.5",
     "@preact/signals": "^2.9.1",
     "@substrate-system/debug": "^0.9.64",
-    "@substrate-system/tapout": "^0.0.40",
+    "@substrate-system/tapout": "^0.0.41",
     "@substrate-system/tapzero": "^0.10.16",
     "@typescript-eslint/eslint-plugin": "^8.61.0",
     "@typescript-eslint/parser": "^8.61.0",
